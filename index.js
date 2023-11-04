@@ -1,14 +1,33 @@
 const express = require('express');
 const app = express();
 const cors = require('cors');
+const jwt = require('jsonwebtoken');
 require('dotenv').config();
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const port = process.env.PORT || 5000;
+var cookieParser = require('cookie-parser');
 
 
 //middleware
-app.use(cors());
+app.use(cors(
+  {
+    origin: ['http://localhost:5173'],
+    credentials: true,
+    methods: ["POST", "GET", "PUT", "DELETE", "UPDATE"]
+  }
+));
 app.use(express.json());
+app.use(cookieParser())
+
+const verify = (req,res,next) => { 
+  const token = req.cookies.espreso_empo; // Extract the token from the 'espreso_empo' cookie
+  console.log('token from middleware:', token)
+  if (!token) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+  next();
+ }
+
 
 
 app.get('/', (req, res ) => { 
@@ -29,11 +48,23 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
-    await client.connect();
+    // await client.connect();
 
   const myColl = client.db("espresso-emporiam").collection("coffees");
 
-  app.get('/coffee',async (req, res ) => { 
+
+  //JWT api
+  app.post('/jwt',async (req,res) => { 
+    const email = req.body.email;
+    const token = jwt.sign({email}, process.env.API_SECRET_KEY, {expiresIn: '1h'});
+    console.log(email, token)
+    res
+    .cookie('espreso_empo', token, {httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict', maxAge: 360000 })
+    .send(token)
+   })
+
+  //Service
+  app.get('/coffee',verify,async (req, res ) => { 
     const coffees =  myColl.find();
     const result = await coffees.toArray();
     res.send(result)
@@ -78,7 +109,7 @@ async function run() {
    })
 
     // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
+    // await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
   } finally {
     // Ensures that the client will close when you finish/error
